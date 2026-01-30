@@ -37,7 +37,7 @@
     </div>
     <div class="mb-3">
       <%= f.label :platform, "Select platform", class: "form-label" %>
-      <%= f.select :platform, [], {}, class: "form-select", data: { "create-listing-target" => "platformInput" }, required: true %>
+      <%= f.select :platform, options_from_collection_for_select(Platform.all, :id, :name), {}, class: "form-select", required: true %>
       <div class="invalid-feedback">
         Please select a platform.
       </div>
