@@ -89,8 +89,13 @@ class ListingsController < ApplicationController
     listing = current_user.listings.new(listing_params)
     listing.game = game
 
-    platform = Platform.find_by(name: param["platform"])
-    listing.platform_id = platform.id
+    platform = Platform.find_by(id: param["platform"])
+    if platform
+      listing.platform_id = platform.id
+    else
+      flash[:alert] = "Please select a valid platform"
+      return redirect_to dashboard_path
+    end
 
     if listing.photos.count > 4
       flash[:alert] = "You can only upload a maximum of 4 photos"
