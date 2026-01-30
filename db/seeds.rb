@@ -19,6 +19,32 @@ if Rails.env.production? && ENV['ALLOW_SEED'] != 'true'
   exit
 end
 
+### Gets the bearer token needed. May be inefficient since we need to get a new one every time we seed (which would be done all in one go anyway, but still)
+
+url = URI.parse("https://id.twitch.tv/oauth2/token")
+params = {
+  client_id: ENV['CLIENT_ID'],
+  client_secret: ENV['CLIENT_SECRET'],
+  grant_type: 'client_credentials'
+}
+
+http = Net::HTTP.new(url.host, url.port)
+http.use_ssl = true
+http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+request = Net::HTTP::Post.new(url.path, {'Content-Type' => 'application/x-www-form-urlencoded'})
+request.set_form_data(params)
+response = http.request(request)
+token_json = JSON.parse(response.body)
+BEARER_TOKEN = token_json["access_token"]
+
+# puts BEARER_TOKEN
+
+### Gets the list of games
+
+HTTP_REQUEST = Net::HTTP.new('api.igdb.com',443)
+HTTP_REQUEST.use_ssl = true
+HTTP_REQUEST.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
 # IGDB seems to only allow 50 limit per request, so pagination with offset is the key
 LIMIT = 50
 
@@ -38,36 +64,14 @@ end
 
 #### Testing seed methods
 def seed_dev
-  ### Gets the bearer token needed. May be inefficient since we need to get a new one every time we seed (which would be done all in one go anyway, but still)
-
-url = URI.parse("https://id.twitch.tv/oauth2/token")
-params = {
-  client_id: ENV['CLIENT_ID'],
-  client_secret: ENV['CLIENT_SECRET'],
-  grant_type: 'client_credentials'
-}
-
-http = Net::HTTP.new(url.host, url.port)
-http.use_ssl = true
-request = Net::HTTP::Post.new(url.path, {'Content-Type' => 'application/x-www-form-urlencoded'})
-request.set_form_data(params)
-response = http.request(request)
-token_json = JSON.parse(response.body)
-@bearer_token = token_json["access_token"]
-
-# puts BEARER_TOKEN
-
-### Gets the list of games
-
-@http_request = Net::HTTP.new('api.igdb.com',443)
-@http_request.use_ssl = true
   def get_games
-    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/games'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{@bearer_token}"})
+  request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/games'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{BEARER_TOKEN}"})
 
-    5.times do |i|
-      offset = i * LIMIT
-      request.body = get_query(offset, ["name", "platforms", "summary", "url", "cover", "id", "total_rating", "total_rating_count", "genres"], "where category = 0 & platforms = [167];", "sort total_rating_count desc;")
-      games_data = JSON.parse(@http_request.request(request).body)
+  5.times do |i|
+    offset = i * LIMIT
+    request.body = get_query(offset, ["name", "platforms", "summary", "url", "cover", "id", "total_rating", "total_rating_count", "genres"], "where category = 0 & platforms = [167];", "sort total_rating_count desc;")
+    begin
+      games_data = JSON.parse(HTTP_REQUEST.request(request).body)
       break if games_data.empty?
 
       games_data.each do |game|
@@ -81,28 +85,29 @@ token_json = JSON.parse(response.body)
         summary = game["summary"]
         url = game["url"]
         cover_id = game["cover"]
-        total_rating = game["total_rating"].round(1)
+        total_rating = game["total_rating"]&.round(1)
         total_rating_count = game["total_rating_count"]
         Game.create!(igdb_id:, name:, platforms:, search_name:, summary:, url:, cover_id:, total_rating:, total_rating_count:, genres:)
       end
+    rescue => e
+      puts "Error fetching games: #{e.message}"
+      break
     end
-    # query notes
-    # category 0 is a main game (i.e. not dlc, addon, mod etc)
-    # status 0 is a released game
-    puts "Games import complete"
   end
+  puts "Games import complete"
+end
 
   def get_covers
-    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/covers'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{@bearer_token}"})
+  request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/covers'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{BEARER_TOKEN}"})
 
-    Game.all.each_with_index do |game, index|
-      id = game.igdb_id
-      offset = 0
-      request.body = get_query(offset, ["url", "id", "game"], "where game = #{id};")
-      covers_data = JSON.parse(@http_request.request(request).body)
+  Game.all.each_with_index do |game, index|
+    id = game.igdb_id
+    offset = 0
+    request.body = get_query(offset, ["url", "id", "game"], "where game = #{id};")
+    begin
+      covers_data = JSON.parse(HTTP_REQUEST.request(request).body)
       next if covers_data.empty?
 
-      #### THE OFFSET IS THE ISSUE
       covers_data.each do |cover|
         cover_id = cover["id"]
         next if Cover.find_by(cover_id: cover_id)
@@ -118,18 +123,21 @@ token_json = JSON.parse(response.body)
           puts new_cover.errors.full_messages
         end
       end
+    rescue => e
+      puts "Error fetching cover for game #{id}: #{e.message}"
     end
-    puts "Covers import complete"
   end
-
+  puts "Covers import complete"
+end
 
   def get_platforms
-    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/platforms'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{@bearer_token}"})
+  request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/platforms'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{BEARER_TOKEN}"})
 
-    0.upto(Float::INFINITY) do |i|
-      offset = i * LIMIT
-      request.body = get_query(offset, ["name", "id"])
-      platforms_data = JSON.parse(@http_request.request(request).body)
+  0.upto(10) do |i|
+    offset = i * LIMIT
+    request.body = get_query(offset, ["name", "id"])
+    begin
+      platforms_data = JSON.parse(HTTP_REQUEST.request(request).body)
       break if platforms_data.empty?
 
       platforms_data.each do |platform|
@@ -140,17 +148,22 @@ token_json = JSON.parse(response.body)
         search_name = name.gsub(/[^a-z0-9]/i, '').downcase
         Platform.create!(platform_id:, name:, search_name:)
       end
+    rescue => e
+      puts "Error fetching platforms: #{e.message}"
+      break
     end
-    puts "Platforms import complete"
   end
+  puts "Platforms import complete"
+end
 
   def get_genres
-    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/genres'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{@bearer_token}"})
+  request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/genres'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{BEARER_TOKEN}"})
 
-    0.upto(Float::INFINITY) do |i|
-      offset = i * LIMIT
-      request.body = get_query(offset, ["name", "id"])
-      genres_data = JSON.parse(@http_request.request(request).body)
+  0.upto(10) do |i|
+    offset = i * LIMIT
+    request.body = get_query(offset, ["name", "id"])
+    begin
+      genres_data = JSON.parse(HTTP_REQUEST.request(request).body)
       break if genres_data.empty?
 
       genres_data.each do |genre|
@@ -161,9 +174,13 @@ token_json = JSON.parse(response.body)
         search_name = name.gsub(/[^a-z0-9]/i, '').downcase
         Genre.create!(genre_id:, name:, search_name:)
       end
+    rescue => e
+      puts "Error fetching genres: #{e.message}"
+      break
     end
-    puts "Genres import complete"
   end
+  puts "Genres import complete"
+end
 
   Platform.destroy_all
   Genre.destroy_all
@@ -268,20 +285,19 @@ end
 def seed_db_details
   Location.destroy_all
 
-  Location.create(address: "Shibuya, Tokyo")
-  Location.create(address: "Shinjuku, Tokyo")
-  Location.create(address: "Harajuku, Tokyo")
-  Location.create(address: "Ueno, Tokyo")
-  Location.create(address: "Ginza, Tokyo")
-  Location.create(address: "Ikebukuro, Tokyo")
-  Location.create(address: "Tokyo Disneyland, Chiba")
-  Location.create(address: "Hachioji, Tokyo")
-  Location.create(address: "Akihabara, Tokyo")
-  Location.create(address: "Roppongi, Tokyo")
-  Location.create(address: "Tochigi, Tochigi")
-  Location.create(address: "Nishi-Kasai, Tokyo")
-  Location.create(address: "Shinagawa, Tokyo")
-
+  Location.create(address: "Shibuya, Tokyo", latitude: 35.658034, longitude: 139.701636)
+  Location.create(address: "Shinjuku, Tokyo", latitude: 35.689487, longitude: 139.691711)
+  Location.create(address: "Harajuku, Tokyo", latitude: 35.670168, longitude: 139.702687)
+  Location.create(address: "Ueno, Tokyo", latitude: 35.713768, longitude: 139.777252)
+  Location.create(address: "Ginza, Tokyo", latitude: 35.671855, longitude: 139.764473)
+  Location.create(address: "Ikebukuro, Tokyo", latitude: 35.729503, longitude: 139.7109)
+  Location.create(address: "Tokyo Disneyland, Chiba", latitude: 35.632896, longitude: 139.878204)
+  Location.create(address: "Hachioji, Tokyo", latitude: 35.6558, longitude: 139.3389)
+  Location.create(address: "Akihabara, Tokyo", latitude: 35.698353, longitude: 139.773114)
+  Location.create(address: "Roppongi, Tokyo", latitude: 35.662837, longitude: 139.73114)
+  Location.create(address: "Tochigi, Tochigi", latitude: 36.565725, longitude: 139.883565)
+  Location.create(address: "Nishi-Kasai, Tokyo", latitude: 35.6638, longitude: 139.753)
+  Location.create(address: "Shinagawa, Tokyo", latitude: 35.599252, longitude: 139.73891)
   puts "Location seeding complete"
 
   # Clear existing data
@@ -409,11 +425,22 @@ def seed_messages_and_chats
   end
   puts "Chats and messages seeding complete"
 end
-
-if Rails.env.production?
-  load Rails.root.join("db/seeds/production.rb")
-else
+if ENV['ALLOW_SEED'] == 'true'
   seed_dev
-  seed_db_details
-  seed_messages_and_chats
+  if Rails.env.production?
+    begin
+      seed_db_details
+      seed_messages_and_chats
+    rescue => e
+      puts "⚠️ Skipping seed_db_details due to error: #{e.message}"
+    end
+  end
+else
+  if Rails.env.production?
+    load Rails.root.join("db/seeds/production.rb")
+  else
+    seed_dev
+    seed_db_details
+    seed_messages_and_chats
+  end
 end
