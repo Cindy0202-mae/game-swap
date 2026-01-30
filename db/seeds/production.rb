@@ -16,6 +16,27 @@ end
 
 puts "✅ Genres ready: #{Genre.count}"
 
+# ---- Platforms ----
+platforms = [
+  { platform_id: 167, name: "PlayStation 5", search_name: "playstation5" },
+  { platform_id: 169, name: "Xbox Series X|S", search_name: "xboxseriesxs" },
+  { platform_id: 130, name: "Nintendo Switch", search_name: "nintendoswitch" }
+]
+
+platforms.each do |p|
+  Platform.find_or_create_by!(platform_id: p[:platform_id]) do |platform|
+    platform.name = p[:name]
+    platform.search_name = p[:search_name]
+  end
+end
+
+puts "✅ Platforms ready: #{Platform.count}"
+
+# ---- Location ----
+# location = Location.first || Location.create!(address: "Tokyo, Japan", latitude: 35.6762, longitude: 139.6503)
+
+puts "✅ Location ready"
+
 # ---- Ensure at least 1 game ----
 game = Game.first || Game.create!(
   igdb_id: 999999,
@@ -39,9 +60,8 @@ user = User.first || User.create!(
   username: "demo_user",
   password: "123456",
   password_confirmation: "123456",
-  location_id: Location.first&.id
+  # location_id: location.id
 )
-
 puts "✅ User ready"
 
 # ---- Ensure listing ----

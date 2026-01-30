@@ -19,30 +19,6 @@ if Rails.env.production? && ENV['ALLOW_SEED'] != 'true'
   exit
 end
 
-### Gets the bearer token needed. May be inefficient since we need to get a new one every time we seed (which would be done all in one go anyway, but still)
-
-url = URI.parse("https://id.twitch.tv/oauth2/token")
-params = {
-  client_id: ENV['CLIENT_ID'],
-  client_secret: ENV['CLIENT_SECRET'],
-  grant_type: 'client_credentials'
-}
-
-http = Net::HTTP.new(url.host, url.port)
-http.use_ssl = true
-request = Net::HTTP::Post.new(url.path, {'Content-Type' => 'application/x-www-form-urlencoded'})
-request.set_form_data(params)
-response = http.request(request)
-token_json = JSON.parse(response.body)
-BEARER_TOKEN = token_json["access_token"]
-
-# puts BEARER_TOKEN
-
-### Gets the list of games
-
-HTTP_REQUEST = Net::HTTP.new('api.igdb.com',443)
-HTTP_REQUEST.use_ssl = true
-
 # IGDB seems to only allow 50 limit per request, so pagination with offset is the key
 LIMIT = 50
 
@@ -62,13 +38,36 @@ end
 
 #### Testing seed methods
 def seed_dev
+  ### Gets the bearer token needed. May be inefficient since we need to get a new one every time we seed (which would be done all in one go anyway, but still)
+
+url = URI.parse("https://id.twitch.tv/oauth2/token")
+params = {
+  client_id: ENV['CLIENT_ID'],
+  client_secret: ENV['CLIENT_SECRET'],
+  grant_type: 'client_credentials'
+}
+
+http = Net::HTTP.new(url.host, url.port)
+http.use_ssl = true
+request = Net::HTTP::Post.new(url.path, {'Content-Type' => 'application/x-www-form-urlencoded'})
+request.set_form_data(params)
+response = http.request(request)
+token_json = JSON.parse(response.body)
+@bearer_token = token_json["access_token"]
+
+# puts BEARER_TOKEN
+
+### Gets the list of games
+
+@http_request = Net::HTTP.new('api.igdb.com',443)
+@http_request.use_ssl = true
   def get_games
-    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/games'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{BEARER_TOKEN}"})
+    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/games'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{@bearer_token}"})
 
     5.times do |i|
       offset = i * LIMIT
       request.body = get_query(offset, ["name", "platforms", "summary", "url", "cover", "id", "total_rating", "total_rating_count", "genres"], "where category = 0 & platforms = [167];", "sort total_rating_count desc;")
-      games_data = JSON.parse(HTTP_REQUEST.request(request).body)
+      games_data = JSON.parse(@http_request.request(request).body)
       break if games_data.empty?
 
       games_data.each do |game|
@@ -94,13 +93,13 @@ def seed_dev
   end
 
   def get_covers
-    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/covers'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{BEARER_TOKEN}"})
+    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/covers'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{@bearer_token}"})
 
     Game.all.each_with_index do |game, index|
       id = game.igdb_id
       offset = 0
       request.body = get_query(offset, ["url", "id", "game"], "where game = #{id};")
-      covers_data = JSON.parse(HTTP_REQUEST.request(request).body)
+      covers_data = JSON.parse(@http_request.request(request).body)
       next if covers_data.empty?
 
       #### THE OFFSET IS THE ISSUE
@@ -125,12 +124,12 @@ def seed_dev
 
 
   def get_platforms
-    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/platforms'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{BEARER_TOKEN}"})
+    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/platforms'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{@bearer_token}"})
 
     0.upto(Float::INFINITY) do |i|
       offset = i * LIMIT
       request.body = get_query(offset, ["name", "id"])
-      platforms_data = JSON.parse(HTTP_REQUEST.request(request).body)
+      platforms_data = JSON.parse(@http_request.request(request).body)
       break if platforms_data.empty?
 
       platforms_data.each do |platform|
@@ -146,12 +145,12 @@ def seed_dev
   end
 
   def get_genres
-    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/genres'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{BEARER_TOKEN}"})
+    request = Net::HTTP::Post.new(URI('https://api.igdb.com/v4/genres'), {'Client-ID' => "#{ENV['CLIENT_ID']}", 'Authorization' => "Bearer #{@bearer_token}"})
 
     0.upto(Float::INFINITY) do |i|
       offset = i * LIMIT
       request.body = get_query(offset, ["name", "id"])
-      genres_data = JSON.parse(HTTP_REQUEST.request(request).body)
+      genres_data = JSON.parse(@http_request.request(request).body)
       break if genres_data.empty?
 
       genres_data.each do |genre|
