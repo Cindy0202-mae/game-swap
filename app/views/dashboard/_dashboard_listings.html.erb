@@ -10,7 +10,11 @@
   <div class="dashboard-listings-container row d-flex justify-content-center w-100">
     <% @listings.each do |listing| %>
       <%= link_to offers_path(listing), class: "dashboard-listing card text-decoration-none col-2 m-2 p-1" do %>
-        <img src="<%= listing.game.cover.url %>" alt="<%= listing.game.name %> cover art">
+        <% if listing.game.cover %>
+          <img src="<%= listing.game.cover.url %>" alt="<%= listing.game.name %> cover art">
+        <% else %>
+          <img src="https://via.placeholder.com/300x400?text=<%= listing.game.name %>" alt="<%= listing.game.name %> cover art">
+        <% end %>
         <h4><%= listing.game.name %></h4>
         <p><strong>Offers: </strong><%= listing.offers.count %></p>
       <% end %>
