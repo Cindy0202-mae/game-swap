@@ -20,16 +20,38 @@ class PagesController < ApplicationController
     end
 
   # Step 1: Randomly select two genres
-  @selected_genres = Genre.order("RANDOM()").limit(2)
-  @selected_genre1, @selected_genre2 = @selected_genres
+    @selected_genres = Genre.order("RANDOM()").limit(2)
 
-  # Step 2: Retrieve games that contain the genre_id in the string format
-  @games_genre1 = Game.where("genres LIKE ?", "%#{@selected_genre1.genre_id}%")
-  @games_genre2 = Game.where("genres LIKE ?", "%#{@selected_genre2.genre_id}%")
+    if @selected_genres.size >= 2
+      @selected_genre1, @selected_genre2 = @selected_genres
 
-  # Step 3: Filter only the games that are in listings
-  @listings_genre1 = Listing.includes(:game).where(game_id: @games_genre1.pluck(:id))
-  @listings_genre2 = Listing.includes(:game).where(game_id: @games_genre2.pluck(:id))
+      # Step 2: Retrieve games that contain the genre_id in the string format
+      @games_genre1 = Game.where("genres LIKE ?", "%#{@selected_genre1.genre_id}%")
+      @games_genre2 = Game.where("genres LIKE ?", "%#{@selected_genre2.genre_id}%")
+
+      # Step 3: Filter only the games that are in listings
+      @listings_genre1 = Listing.includes(:game).where(game_id: @games_genre1.pluck(:id))
+      @listings_genre2 = Listing.includes(:game).where(game_id: @games_genre2.pluck(:id))
+
+      # Step 3: Filter only the games that are in listings
+      @listings_genre1 = Listing.includes(:game).where(game_id: @games_genre1.pluck(:id))
+      @listings_genre2 = Listing.includes(:game).where(game_id: @games_genre2.pluck(:id))
+
+      # Step 4: Organize listings into groups of 6 for the carousel
+      @carousel_groups_genre1 = prepare_carousel(@listings_genre1)
+      @carousel_groups_genre2 = prepare_carousel(@listings_genre2)
+
+      # Step 5: Filter out genres with no listings
+      @valid_carousels = []
+      @valid_carousels << { genre: @selected_genres.first, groups: @carousel_groups_genre1 } unless @carousel_groups_genre1.empty?
+      @valid_carousels << { genre: @selected_genres.last, groups: @carousel_groups_genre2 } unless @carousel_groups_genre2.empty?
+    else
+      # No genres found in DB
+      @valid_carousels = []
+    end
+  end
+
+private
 
   def prepare_carousel(listings)
     groups = listings.in_groups_of(6, false)
@@ -39,15 +61,7 @@ class PagesController < ApplicationController
         group << listings[group.size % listings.size] if listings.any?
       end
     end
-  end
 
-  # Step 4: Organize listings into groups of 6 for the carousel
-  @carousel_groups_genre1 = prepare_carousel(@listings_genre1)
-  @carousel_groups_genre2 = prepare_carousel(@listings_genre2)
-
-  # Step 5: Filter out genres with no listings
-  @valid_carousels = []
-  @valid_carousels << { genre: @selected_genres.first, groups: @carousel_groups_genre1 } unless @carousel_groups_genre1.empty?
-  @valid_carousels << { genre: @selected_genres.last, groups: @carousel_groups_genre2 } unless @carousel_groups_genre2.empty?
+    groups
   end
 end
